@@ -568,6 +568,26 @@ class ToolOptionsRowView: NSView {
                 head.line(to: NSPoint(x: to.x - 5, y: mid - 3))
                 head.close()
                 head.fill()
+            case .sketchy:
+                // Wavy shaft + open chevron, no fill — communicates "hand-drawn"
+                let shaft = NSBezierPath()
+                shaft.lineWidth = 1.5
+                shaft.lineCapStyle = .round
+                shaft.lineJoinStyle = .round
+                shaft.move(to: from)
+                shaft.curve(
+                    to: NSPoint(x: to.x - 4, y: mid),
+                    controlPoint1: NSPoint(x: from.x + 5, y: mid - 2),
+                    controlPoint2: NSPoint(x: to.x - 9, y: mid + 2))
+                shaft.stroke()
+                let head = NSBezierPath()
+                head.lineWidth = 1.5
+                head.lineCapStyle = .round
+                head.lineJoinStyle = .round
+                head.move(to: NSPoint(x: to.x - 5, y: mid + 4))
+                head.line(to: to)
+                head.line(to: NSPoint(x: to.x - 6, y: mid - 3))
+                head.stroke()
             }
             return true
         }

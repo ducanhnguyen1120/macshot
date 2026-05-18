@@ -133,6 +133,7 @@ enum ArrowStyle: Int, CaseIterable {
     case double = 2     // arrowheads at both ends
     case open = 3       // open/unfilled chevron arrowhead
     case tail = 4       // filled arrowhead at end + circle at start
+    case sketchy = 5    // hand-drawn wobbly shaft with open chevron head
 }
 
 class Annotation {
@@ -202,6 +203,11 @@ class Annotation {
     var textAlignment: NSTextAlignment = .left // text alignment within the box
     var fontFamilyName: String?       // font family for text (nil = system default)
     var outlineColor: NSColor?        // shape/arrow/line outline color (nil = no outline)
+    /// Stable per-annotation seed for deterministic procedural variation
+    /// (e.g. the sketchy arrow style's wobble offsets). Seeded on creation,
+    /// preserved across clone/codable so the same arrow renders identically
+    /// across redraws and reloads.
+    var randomSeed: UInt32 = UInt32.random(in: 1...UInt32.max)
 
     init(tool: AnnotationTool, startPoint: NSPoint, endPoint: NSPoint, color: NSColor, strokeWidth: CGFloat) {
         self.tool = tool
@@ -248,6 +254,7 @@ class Annotation {
         c.textAlignment = textAlignment
         c.fontFamilyName = fontFamilyName
         c.outlineColor = outlineColor
+        c.randomSeed = randomSeed
         return c
     }
 
@@ -824,6 +831,11 @@ class Annotation {
             drawThickArrow()
             return
         }
+        // Sketchy style is hand-drawn — also a different shape pipeline
+        if arrowStyle == .sketchy {
+            drawSketchyArrow()
+            return
+        }
 
         let pts = arrowReversed ? waypoints.reversed() : waypoints
         guard pts.count >= 2 else { return }
@@ -925,7 +937,7 @@ class Annotation {
                 let h = NSBezierPath(); h.lineWidth = strokeWidth + outlineW * 2
                 h.lineCapStyle = .round; h.lineJoinStyle = .round
                 h.move(to: ep1); h.line(to: lastPt); h.line(to: ep2); h.stroke()
-            case .thick: break
+            case .thick, .sketchy: break  // handled by early returns above
             }
             if arrowStyle == .tail {
                 let cr = NSRect(x: firstPt.x - tailRadius - outlineW, y: firstPt.y - tailRadius - outlineW,
@@ -970,8 +982,8 @@ class Annotation {
             head.line(to: lastPt)
             head.line(to: ep2)
             head.stroke()
-        case .thick:
-            break // handled by early return above
+        case .thick, .sketchy:
+            break // handled by early returns above
         }
 
         // Tail: circle at start
@@ -1135,6 +1147,162 @@ class Annotation {
 
         color.setFill()
         path.fill()
+    }
+
+    /// Hand-drawn / sketchy arrow style. The shaft wobbles slightly along its
+    /// length, the chevron arrowhead is asymmetric, and every instance varies
+    /// deterministically based on `randomSeed`.
+    private func drawSketchyArrow() {
+        let pts = arrowReversed ? waypoints.reversed() : waypoints
+        guard pts.count >= 2 else { return }
+        let firstPt = pts.first!
+        let lastPt = pts.last!
+
+        let totalLen = hypot(lastPt.x - firstPt.x, lastPt.y - firstPt.y)
+        guard totalLen > 1 else { return }
+
+        // End direction (matches other styles: respects bend/multi-anchor)
+        let endAngle: CGFloat
+        if hasMultiAnchor {
+            let preLast = pts.count >= 2 ? pts[pts.count - 2] : firstPt
+            endAngle = atan2(lastPt.y - preLast.y, lastPt.x - preLast.x)
+        } else if let cp = controlPoint {
+            endAngle = atan2(lastPt.y - cp.y, lastPt.x - cp.x)
+        } else {
+            endAngle = atan2(lastPt.y - firstPt.y, lastPt.x - firstPt.x)
+        }
+
+        // Seeded PRNG for stable per-instance variation.
+        var rng = Self.SketchyRNG(seed: randomSeed == 0 ? 1 : randomSeed)
+
+        // --- Shaft ---
+        // Build a wobbly polyline from firstPt to lastPt with small perpendicular
+        // offsets that vary smoothly along the length. We sample 8-12 points and
+        // smooth into a Catmull-Rom curve.
+        let sampleCount = 10
+        let dx = (lastPt.x - firstPt.x) / CGFloat(sampleCount)
+        let dy = (lastPt.y - firstPt.y) / CGFloat(sampleCount)
+        // Perpendicular unit vector
+        let lineAngle = atan2(dy, dx)
+        let perpX = -sin(lineAngle)
+        let perpY = cos(lineAngle)
+
+        // Wobble amplitude scales with stroke + length but stays subtle.
+        let maxWobble: CGFloat = min(max(strokeWidth * 0.6, 1.5), totalLen * 0.04)
+
+        // Three sine components with random phase/amplitude for organic feel.
+        let phase1 = rng.cgFloat(in: 0...(2 * .pi))
+        let phase2 = rng.cgFloat(in: 0...(2 * .pi))
+        let amp1 = rng.cgFloat(in: 0.5...1.0) * maxWobble
+        let amp2 = rng.cgFloat(in: 0.2...0.5) * maxWobble
+        let freq1 = rng.cgFloat(in: 1.0...2.0)
+        let freq2 = rng.cgFloat(in: 2.5...4.0)
+        let skewSign: CGFloat = rng.bool() ? 1 : -1
+
+        var shaftPts: [NSPoint] = []
+        for i in 0...sampleCount {
+            let t = CGFloat(i) / CGFloat(sampleCount)
+            // Taper wobble near endpoints (people draw cleaner near the start/tip).
+            let taper = sin(t * .pi)
+            let wobble = (amp1 * sin(t * freq1 * .pi + phase1)
+                          + amp2 * sin(t * freq2 * .pi + phase2)) * taper * skewSign
+            let bx = firstPt.x + dx * CGFloat(i) + perpX * wobble
+            let by = firstPt.y + dy * CGFloat(i) + perpY * wobble
+            shaftPts.append(NSPoint(x: bx, y: by))
+        }
+
+        // Slight under/overshoot at the tip — gives the hand-drawn "didn't stop
+        // exactly there" feel without breaking the geometric endpoints (we only
+        // shift the visible draw, not the annotation's selectionBounds).
+        let tipShift = rng.cgFloat(in: -strokeWidth * 0.8...strokeWidth * 1.2)
+        if shaftPts.count >= 2 {
+            let last = shaftPts.removeLast()
+            let preLast = shaftPts.last!
+            let segAngle = atan2(last.y - preLast.y, last.x - preLast.x)
+            shaftPts.append(NSPoint(
+                x: last.x + cos(segAngle) * tipShift,
+                y: last.y + sin(segAngle) * tipShift))
+        }
+
+        let shaftPath = Self.smoothPath(through: shaftPts)
+        shaftPath.lineWidth = strokeWidth
+        shaftPath.lineCapStyle = .round
+        shaftPath.lineJoinStyle = .round
+
+        // --- Arrowhead (open chevron, asymmetric) ---
+        let headLen: CGFloat = min(max(16, strokeWidth * 6), totalLen * 0.4)
+        // Asymmetric: the two sides of the chevron differ slightly in length and angle.
+        let leftAngleOffset = rng.cgFloat(in: 0.35...0.55)   // ~20°-31°
+        let rightAngleOffset = rng.cgFloat(in: 0.35...0.55)
+        let leftLen = headLen * rng.cgFloat(in: 0.85...1.15)
+        let rightLen = headLen * rng.cgFloat(in: 0.85...1.15)
+
+        // The chevron is anchored at the very last shaft point so it actually
+        // connects to where the shaft ends (after the tip shift).
+        let tip = shaftPts.last ?? lastPt
+        let ep1 = NSPoint(
+            x: tip.x - leftLen * cos(endAngle - leftAngleOffset),
+            y: tip.y - leftLen * sin(endAngle - leftAngleOffset))
+        let ep2 = NSPoint(
+            x: tip.x - rightLen * cos(endAngle + rightAngleOffset),
+            y: tip.y - rightLen * sin(endAngle + rightAngleOffset))
+
+        // Each chevron side also wobbles very slightly (one mid-point bend).
+        let leftMid = NSPoint(
+            x: (tip.x + ep1.x) / 2 + perpX * rng.cgFloat(in: -strokeWidth * 0.4...strokeWidth * 0.4),
+            y: (tip.y + ep1.y) / 2 + perpY * rng.cgFloat(in: -strokeWidth * 0.4...strokeWidth * 0.4))
+        let rightMid = NSPoint(
+            x: (tip.x + ep2.x) / 2 + perpX * rng.cgFloat(in: -strokeWidth * 0.4...strokeWidth * 0.4),
+            y: (tip.y + ep2.y) / 2 + perpY * rng.cgFloat(in: -strokeWidth * 0.4...strokeWidth * 0.4))
+
+        let leftHead = Self.smoothPath(through: [tip, leftMid, ep1])
+        leftHead.lineWidth = strokeWidth
+        leftHead.lineCapStyle = .round
+        leftHead.lineJoinStyle = .round
+
+        let rightHead = Self.smoothPath(through: [tip, rightMid, ep2])
+        rightHead.lineWidth = strokeWidth
+        rightHead.lineCapStyle = .round
+        rightHead.lineJoinStyle = .round
+
+        // --- Outline pass ---
+        let outlineW: CGFloat = 3
+        if let oc = outlineColor {
+            oc.setStroke()
+            for p in [shaftPath, leftHead, rightHead] {
+                let outlinePath = p.copy() as! NSBezierPath
+                outlinePath.lineWidth = p.lineWidth + outlineW * 2
+                outlinePath.lineCapStyle = .round
+                outlinePath.lineJoinStyle = .round
+                outlinePath.stroke()
+            }
+        }
+
+        // --- Main color pass ---
+        color.setStroke()
+        shaftPath.stroke()
+        leftHead.stroke()
+        rightHead.stroke()
+    }
+
+    /// Tiny deterministic PRNG (xorshift32) so sketchy arrows look the same
+    /// across redraws while still varying between instances.
+    private struct SketchyRNG {
+        var state: UInt32
+        init(seed: UInt32) { self.state = seed }
+        mutating func next() -> UInt32 {
+            var x = state
+            x ^= x << 13
+            x ^= x >> 17
+            x ^= x << 5
+            state = x
+            return x
+        }
+        mutating func cgFloat(in range: ClosedRange<CGFloat>) -> CGFloat {
+            let n = CGFloat(next()) / CGFloat(UInt32.max)
+            return range.lowerBound + n * (range.upperBound - range.lowerBound)
+        }
+        mutating func bool() -> Bool { next() & 1 == 0 }
     }
 
     private func drawRectangle(forceFilled: Bool = false) {
