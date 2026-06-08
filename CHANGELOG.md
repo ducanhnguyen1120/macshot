@@ -1,5 +1,21 @@
 # Changelog
 
+## [4.1.2] - 2026-06-08
+
+### Added
+
+- **Pin from Clipboard** — pin whatever is on the clipboard (image or text) as a floating window, from the menu bar or a configurable hotkey. Thanks @chablino (#210).
+- **Hide capture instructions** — a Settings → General toggle to hide the on-screen capture hint text (#226).
+
+### Fixed
+
+- **macshot no longer quits itself when left idle in the background** — the menu bar process was eligible for memory-pressure (Jetsam) termination. Thanks @PINKIIILQWQ (#132, #222).
+- **Stuck invisible overlay swallowing all clicks** — after waking from sleep, a leftover transparent overlay could intercept every click on a display until macshot was quit. Idle overlays are now click-through (#231).
+- **First selection drag no longer swallowed** — starting a selection over the previous position of hidden toolbar chrome could silently fail. Thanks @chablino (#219).
+- **Overlay zoom-in animation with Reduce Motion** — the capture overlay briefly scaled in (visible at the screen edges) when the system "Reduce Motion" setting was on. It now appears instantly (#205).
+- **Number tool now resets after deleting** — deleting numbered annotations and adding a new one restarts the sequence instead of continuing to climb (#211).
+- **Silent save failures** — saving a screenshot when no save folder was authorized could fail silently in the sandbox. macshot now prompts for a folder once, then saves there. Thanks @jeffreylyg (#177).
+
 ## [4.1.1] - 2026-05-21
 
 ### Added
