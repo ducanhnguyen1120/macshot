@@ -903,6 +903,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate {
             dismissOverlays()
             return
         }
+        if UserDefaults.standard.bool(forKey: "rememberLastSelection") {
+            pendingRestoreLastArea = true
+        }
         startCapture(fromMenu: fromMenu)
     }
 
