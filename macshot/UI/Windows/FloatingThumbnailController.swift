@@ -29,6 +29,7 @@ class FloatingThumbnailController: NSObject, NSDraggingSource {
     /// intermediate positions during slide-in or reflow animations.
     private var targetFrame: NSRect = .zero
     var onDismiss: (() -> Void)?
+    private var swipeBaseOrigin: NSPoint? = nil
 
     // Action callbacks
     var onCopy:     (() -> Void)?
@@ -104,7 +105,29 @@ class FloatingThumbnailController: NSObject, NSDraggingSource {
         view.onSaveAll  = { [weak self] in self?.onSaveAll?() }
         view.onHoverEnter = { [weak self] in self?.pauseAutoDismiss() }
         view.onHoverExit  = { [weak self] in self?.scheduleAutoDismiss() }
-        view.onSwipeDismiss = { [weak self] in self?.animateOut() }
+        view.onSwipeUpdate = { [weak self] offset in
+            guard let self, let window = self.window else { return }
+            if self.swipeBaseOrigin == nil { self.swipeBaseOrigin = window.frame.origin }
+            let base = self.swipeBaseOrigin!
+            window.setFrame(
+                NSRect(x: base.x + offset, y: base.y, width: window.frame.width, height: window.frame.height),
+                display: true
+            )
+        }
+        view.onSwipeEnd = { [weak self] offset in
+            guard let self else { return }
+            self.swipeBaseOrigin = nil
+            if abs(offset) > 80 {
+                self.animateOut(swipeOffset: offset)
+            } else {
+                guard let window = self.window else { return }
+                NSAnimationContext.runAnimationGroup { ctx in
+                    ctx.duration = 0.25
+                    ctx.timingFunction = CAMediaTimingFunction(name: .easeOut)
+                    window.animator().setFrame(self.targetFrame, display: true)
+                }
+            }
+        }
 
         panel.contentView = view
         self.window = panel
@@ -180,14 +203,18 @@ class FloatingThumbnailController: NSObject, NSDraggingSource {
         }
     }
 
-    private func animateOut() {
+    private func animateOut(swipeOffset: CGFloat = 0) {
         guard let window = window else { return }
         let frame = window.frame
         let screen = NSScreen.main ?? NSScreen.screens[0]
-        let offscreenX = corner.isLeft ? screen.visibleFrame.minX - frame.width - 10 : screen.visibleFrame.maxX + 10
+        // Use swipe direction when available, otherwise fall back to corner side
+        let goLeft = swipeOffset != 0 ? swipeOffset < 0 : corner.isLeft
+        let offscreenX = goLeft
+            ? screen.visibleFrame.minX - frame.width - 10
+            : screen.visibleFrame.maxX + 10
 
         NSAnimationContext.runAnimationGroup({ ctx in
-            ctx.duration = 0.4
+            ctx.duration = 0.28
             ctx.timingFunction = CAMediaTimingFunction(name: .easeIn)
             window.animator().setFrame(
                 NSRect(x: offscreenX, y: frame.minY, width: frame.width, height: frame.height),
@@ -234,14 +261,15 @@ private class ThumbnailView: NSView {
     var onSaveAll:  (() -> Void)?
     var onHoverEnter: (() -> Void)?
     var onHoverExit:  (() -> Void)?
-    var onSwipeDismiss: (() -> Void)?
+    var onSwipeUpdate: ((CGFloat) -> Void)?
+    var onSwipeEnd:    ((CGFloat) -> Void)?
 
     private var image: NSImage
     private let thumbSize: NSSize
     private var dragStartPoint: NSPoint?
     private var isHovering: Bool = false
     private var trackingArea: NSTrackingArea?
-    private var swipeAccum: CGFloat = 0
+    private var swipeOffset: CGFloat = 0
 
     // Corner button hit rects (in view coords, updated in draw)
     private var closeBtnRect:  NSRect = .zero
@@ -460,15 +488,21 @@ private class ThumbnailView: NSView {
     // MARK: - Swipe to dismiss (trackpad 2-finger swipe)
 
     override func scrollWheel(with event: NSEvent) {
-        guard event.phase != [] || event.momentumPhase != [] else { return }
-        if event.phase == .ended || event.phase == .cancelled {
-            swipeAccum = 0
-            return
-        }
-        swipeAccum += event.scrollingDeltaX
-        if abs(swipeAccum) > 60 {
-            swipeAccum = 0
-            onSwipeDismiss?()
+        // Ignore momentum scrolling — only track the direct gesture
+        guard event.momentumPhase == [] else { return }
+        guard event.phase != [] else { return }
+
+        switch event.phase {
+        case .began:
+            swipeOffset = 0
+        case .changed:
+            swipeOffset += event.scrollingDeltaX
+            onSwipeUpdate?(swipeOffset)
+        case .ended, .cancelled:
+            onSwipeEnd?(swipeOffset)
+            swipeOffset = 0
+        default:
+            break
         }
     }
 
