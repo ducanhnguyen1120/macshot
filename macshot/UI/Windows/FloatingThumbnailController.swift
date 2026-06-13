@@ -104,6 +104,7 @@ class FloatingThumbnailController: NSObject, NSDraggingSource {
         view.onSaveAll  = { [weak self] in self?.onSaveAll?() }
         view.onHoverEnter = { [weak self] in self?.pauseAutoDismiss() }
         view.onHoverExit  = { [weak self] in self?.scheduleAutoDismiss() }
+        view.onSwipeDismiss = { [weak self] in self?.animateOut() }
 
         panel.contentView = view
         self.window = panel
@@ -233,12 +234,14 @@ private class ThumbnailView: NSView {
     var onSaveAll:  (() -> Void)?
     var onHoverEnter: (() -> Void)?
     var onHoverExit:  (() -> Void)?
+    var onSwipeDismiss: (() -> Void)?
 
     private var image: NSImage
     private let thumbSize: NSSize
     private var dragStartPoint: NSPoint?
     private var isHovering: Bool = false
     private var trackingArea: NSTrackingArea?
+    private var swipeAccum: CGFloat = 0
 
     // Corner button hit rects (in view coords, updated in draw)
     private var closeBtnRect:  NSRect = .zero
@@ -452,6 +455,21 @@ private class ThumbnailView: NSView {
             return true
         }
         return result
+    }
+
+    // MARK: - Swipe to dismiss (trackpad 2-finger swipe)
+
+    override func scrollWheel(with event: NSEvent) {
+        guard event.phase != [] || event.momentumPhase != [] else { return }
+        if event.phase == .ended || event.phase == .cancelled {
+            swipeAccum = 0
+            return
+        }
+        swipeAccum += event.scrollingDeltaX
+        if abs(swipeAccum) > 60 {
+            swipeAccum = 0
+            onSwipeDismiss?()
+        }
     }
 
     // MARK: - Mouse events

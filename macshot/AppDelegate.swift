@@ -898,6 +898,11 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate {
     }
 
     private func beginCaptureArea(fromMenu: Bool) {
+        if isCapturing {
+            cancelPreCaptureCountdown()
+            dismissOverlays()
+            return
+        }
         startCapture(fromMenu: fromMenu)
     }
 

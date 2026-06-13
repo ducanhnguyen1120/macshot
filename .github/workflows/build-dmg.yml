@@ -1,0 +1,64 @@
+name: Build DMG (unsigned)
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: macos-15
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Select Xcode
+        run: |
+          XC=$(ls -d /Applications/Xcode*.app 2>/dev/null | sort -V | tail -1)
+          echo "Using $XC"
+          sudo xcode-select -s "$XC/Contents/Developer"
+          xcodebuild -version
+
+      - name: Resolve packages
+        run: |
+          xcodebuild \
+            -project macshot.xcodeproj \
+            -scheme macshot \
+            -configuration Release \
+            -derivedDataPath build \
+            CODE_SIGN_IDENTITY="" \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGNING_ALLOWED=NO \
+            -resolvePackageDependencies
+
+      - name: Build
+        run: |
+          xcodebuild \
+            -project macshot.xcodeproj \
+            -scheme macshot \
+            -configuration Release \
+            -derivedDataPath build \
+            CODE_SIGN_IDENTITY="" \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGNING_ALLOWED=NO \
+            build
+
+      - name: Create DMG
+        run: |
+          APP="build/Build/Products/Release/macshot.app"
+          mkdir -p /tmp/dmg-staging
+          cp -R "$APP" /tmp/dmg-staging/
+          hdiutil create \
+            -volname "DAN.RIDE" \
+            -srcfolder /tmp/dmg-staging \
+            -ov -format UDZO \
+            DAN.RIDE.dmg
+
+      - name: Upload DMG artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: DAN.RIDE-dmg
+          path: DAN.RIDE.dmg
+          retention-days: 30

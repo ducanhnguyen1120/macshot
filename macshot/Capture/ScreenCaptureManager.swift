@@ -88,6 +88,10 @@ class ScreenCaptureManager {
         timing: (@Sendable (String) -> Void)? = nil
     ) -> [ScreenCapture] {
         timing?("captureAllScreensImmediately screens=\(context.screens.count)")
+        let hideCursor = context.cursor == nil
+        if hideCursor { CGDisplayHideCursor(CGMainDisplayID()) }
+        defer { if hideCursor { CGDisplayShowCursor(CGMainDisplayID()) } }
+
         return context.screens.enumerated().compactMap { index, screen in
             let cgRect = CGRect(
                 x: screen.frame.origin.x,
@@ -273,14 +277,18 @@ class ScreenCaptureManager {
                                     width: screen.frame.width,
                                     height: screen.frame.height)
                                 timing?("fallback CGWindowListCreateImage begin display=\(index)")
+                                let showCursor = UserDefaults.standard.bool(forKey: "captureCursor")
+                                if !showCursor { CGDisplayHideCursor(CGMainDisplayID()) }
                                 guard
                                     let image = CGWindowListCreateImage(
                                         cgRect, .optionAll, kCGNullWindowID, .bestResolution
                                     )
                                 else {
+                                    if !showCursor { CGDisplayShowCursor(CGMainDisplayID()) }
                                     timing?("fallback CGWindowListCreateImage failed display=\(index)")
                                     return nil
                                 }
+                                if !showCursor { CGDisplayShowCursor(CGMainDisplayID()) }
                                 timing?("fallback CGWindowListCreateImage end display=\(index) pixels=\(image.width)x\(image.height)")
                                 return ScreenCapture(screen: screen, image: image)
                             }

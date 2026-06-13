@@ -163,6 +163,8 @@ class OverlayView: NSView {
     private var isAnchoredSelecting: Bool = false
     private var isDraggingSelection: Bool = false
     private var isResizingSelection: Bool = false
+    private var pendingReselect: Bool = false
+    private var pendingReselectStart: NSPoint = .zero
     private var resizeHandle: ResizeHandle = .none
     private var dragOffset: NSPoint = .zero
     private var lastDragPoint: NSPoint?  // for shift constraint on flagsChanged
@@ -4913,13 +4915,12 @@ class OverlayView: NSView {
                 return
             }
 
-            // Outside the selection — historically this reset everything to
-            // start a new selection, but accidental clicks outside an
-            // established selection were destroying in-progress annotation
-            // work (#154). Treat outside clicks as a no-op once we have a
-            // committed selection; ESC still cancels deliberately.
-            return
-            needsDisplay = true
+            // Outside the selection — a bare click is still a no-op (accidental
+            // click protection, #154), but a drag outside the selection starts a
+            // fresh rubber-band selection. Track the intent here; mouseDragged
+            // commits it once the distance threshold is crossed.
+            pendingReselect = true
+            pendingReselectStart = point
 
         case .selecting:
             break
@@ -4928,6 +4929,25 @@ class OverlayView: NSView {
 
     override func mouseDragged(with event: NSEvent) {
         let point = convert(event.locationInWindow, from: nil)
+
+        // Pending reselect: user clicked outside an established selection.
+        // Commit a new rubber-band only once the drag crosses a 4-pixel threshold
+        // to keep accidental-click protection intact.
+        if pendingReselect {
+            let dx = point.x - pendingReselectStart.x
+            let dy = point.y - pendingReselectStart.y
+            guard dx * dx + dy * dy > 16 else { return }
+            pendingReselect = false
+            annotations.removeAll()
+            undoStack.removeAll()
+            redoStack.removeAll()
+            cachedCompositedImage = nil
+            selectionStart = pendingReselectStart
+            selectionRect = NSRect(origin: pendingReselectStart, size: .zero)
+            state = .selecting
+            needsDisplay = true
+            return
+        }
 
         // Cancel long-press timer if the user moved more than 3px (they're drawing, not selecting)
         if longPressTimer != nil {
@@ -5325,6 +5345,7 @@ class OverlayView: NSView {
 
     override func mouseUp(with event: NSEvent) {
         spaceRepositioning = false
+        pendingReselect = false
 
         // Clean up long-press timer
         longPressTimer?.invalidate()
