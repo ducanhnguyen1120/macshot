@@ -1,4 +1,4 @@
-name: Build DMG (unsigned)
+name: Build DMG (ad-hoc signed)
 
 on:
   push:
@@ -31,9 +31,9 @@ jobs:
             -scheme macshot \
             -configuration Release \
             -derivedDataPath build \
-            CODE_SIGN_IDENTITY="" \
+            CODE_SIGN_IDENTITY="-" \
             CODE_SIGNING_REQUIRED=NO \
-            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_ALLOWED=YES \
             -resolvePackageDependencies
 
       - name: Build
@@ -43,10 +43,21 @@ jobs:
             -scheme macshot \
             -configuration Release \
             -derivedDataPath build \
-            CODE_SIGN_IDENTITY="" \
+            CODE_SIGN_IDENTITY="-" \
             CODE_SIGNING_REQUIRED=NO \
-            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_ALLOWED=YES \
             build
+
+      - name: Ad-hoc sign app and frameworks
+        run: |
+          APP="build/Build/Products/Release/macshot.app"
+          # Sign embedded frameworks first, then the main bundle
+          find "$APP/Contents/Frameworks" -name "*.framework" -o -name "*.dylib" 2>/dev/null | while read f; do
+            codesign --force --sign - "$f" 2>/dev/null || true
+          done
+          codesign --force --deep --sign - "$APP"
+          echo "Code signature:"
+          codesign -dv "$APP" 2>&1 | head -10
 
       - name: Create DMG
         run: |

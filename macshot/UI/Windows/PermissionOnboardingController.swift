@@ -241,14 +241,16 @@ class PermissionOnboardingController: NSWindowController {
         }
     }
 
-    /// Check screen recording permission without triggering a system dialog.
-    /// Uses CGPreflightScreenCaptureAccess() which is purely a status query.
-    /// NOTE: This may return a stale cached value if permission was revoked since launch.
+    /// Check screen recording permission at launch.
+    /// Uses preflight first (no dialog). If that returns false — which happens for unsigned
+    /// apps that haven't been registered with TCC — falls back to CGRequestScreenCaptureAccess()
+    /// which is authoritative and returns true immediately when permission is already granted.
     static func hasScreenRecordingPermission() -> Bool {
-        return CGPreflightScreenCaptureAccess()
+        if CGPreflightScreenCaptureAccess() { return true }
+        return CGRequestScreenCaptureAccess()
     }
 
-    /// Check at app launch — synchronous and dialog-free.
+    /// Check at app launch — synchronous.
     static func checkPermissionSync(completion: @escaping (Bool) -> Void) {
         completion(hasScreenRecordingPermission())
     }
