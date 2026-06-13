@@ -11,6 +11,9 @@ class PermissionOnboardingController: NSWindowController {
 
     private var pollTimer: Timer?
     private var permissionGranted = false
+    // After the user clicks the settings button, switch to CGRequestScreenCaptureAccess()
+    // for polling. Unsigned apps may never appear in TCC unless this is called at least once.
+    private var hasRequestedPermission = false
 
     // MARK: - Init
 
@@ -194,10 +197,8 @@ class PermissionOnboardingController: NSWindowController {
     // MARK: - Show
 
     func show() {
-        // Reset granted state each time we show — handles the revoke-then-reshown case.
-        // CGPreflightScreenCaptureAccess() caches true within a process lifetime, so
-        // we cannot rely on it after revocation. We reset here so polling starts fresh.
         permissionGranted = false
+        hasRequestedPermission = false
 
         // Reset UI back to initial state in case this controller is being reused
         spinner?.isHidden = false
@@ -219,8 +220,6 @@ class PermissionOnboardingController: NSWindowController {
 
     private func startPolling() {
         pollTimer?.invalidate()
-        // Poll every 0.75s using CGPreflightScreenCaptureAccess() — this is a pure
-        // TCC status query that never triggers the native system dialog.
         pollTimer = Timer.scheduledTimer(withTimeInterval: 0.75, repeats: true) { [weak self] _ in
             self?.checkPermission()
         }
@@ -228,7 +227,13 @@ class PermissionOnboardingController: NSWindowController {
 
     private func checkPermission() {
         guard !permissionGranted else { return }
-        if CGPreflightScreenCaptureAccess() {
+        // Before the user clicks the button: use preflight (no dialog).
+        // After: use CGRequestScreenCaptureAccess() — unsigned apps need this to be called
+        // at least once for TCC to properly register and return a meaningful result.
+        let granted = hasRequestedPermission
+            ? CGRequestScreenCaptureAccess()
+            : CGPreflightScreenCaptureAccess()
+        if granted {
             permissionGranted = true
             pollTimer?.invalidate()
             pollTimer = nil
@@ -268,14 +273,24 @@ class PermissionOnboardingController: NSWindowController {
     // MARK: - Actions
 
     @objc private func openSettings() {
-        // Deep-link directly to Privacy & Security → Screen Recording.
-        // macOS will add macshot to the list automatically when it first
-        // attempts a capture — no CGRequestScreenCaptureAccess() call needed
-        // (that API shows the redundant native dialog we want to avoid).
+        hasRequestedPermission = true
+
+        // CGRequestScreenCaptureAccess() registers the app with TCC (essential for unsigned
+        // apps) and returns the current permission state without opening a dialog if the
+        // user already granted in System Settings.
+        if CGRequestScreenCaptureAccess() {
+            if !permissionGranted {
+                permissionGranted = true
+                pollTimer?.invalidate()
+                pollTimer = nil
+                showGranted()
+            }
+            return
+        }
+
         if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture") {
             NSWorkspace.shared.open(url)
         }
-
         statusLabel?.stringValue = L("Enable \"macshot\" in the list, then return here")
     }
 
