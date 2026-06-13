@@ -16,7 +16,7 @@ class PermissionOnboardingController: NSWindowController {
 
     init() {
         let window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 400, height: 520),
+            contentRect: NSRect(x: 0, y: 0, width: 400, height: 570),
             styleMask: [.titled, .closable],
             backing: .buffered,
             defer: false
@@ -42,6 +42,7 @@ class PermissionOnboardingController: NSWindowController {
     private weak var statusLabel: NSTextField?
     private weak var actionButton: NSButton?
     private weak var continueButton: NSButton?
+    private weak var relaunchButton: NSButton?
     private weak var spinner: NSProgressIndicator?
     private weak var checkmark: NSTextField?
 
@@ -130,6 +131,16 @@ class PermissionOnboardingController: NSWindowController {
         cv.addSubview(contBtn)
         self.continueButton = contBtn
 
+        // Relaunch button — shown when user granted but app is still stuck
+        let relaunchBtn = NSButton(title: L("Still stuck? Quit & Relaunch"), target: self, action: #selector(relaunchApp))
+        relaunchBtn.bezelStyle = .inline
+        relaunchBtn.isBordered = false
+        relaunchBtn.font = NSFont.systemFont(ofSize: 11)
+        relaunchBtn.contentTintColor = .secondaryLabelColor
+        relaunchBtn.translatesAutoresizingMaskIntoConstraints = false
+        cv.addSubview(relaunchBtn)
+        self.relaunchButton = relaunchBtn
+
         // Image aspect ratio: 1405 × 892
         let imgAspect: CGFloat = 892.0 / 1405.0
 
@@ -168,7 +179,10 @@ class PermissionOnboardingController: NSWindowController {
             openBtn.topAnchor.constraint(equalTo: stepBox.bottomAnchor, constant: 14),
             openBtn.centerXAnchor.constraint(equalTo: cv.centerXAnchor),
             openBtn.widthAnchor.constraint(equalToConstant: 260),
-            openBtn.bottomAnchor.constraint(equalTo: cv.bottomAnchor, constant: -20),
+
+            relaunchBtn.topAnchor.constraint(equalTo: openBtn.bottomAnchor, constant: 10),
+            relaunchBtn.centerXAnchor.constraint(equalTo: cv.centerXAnchor),
+            relaunchBtn.bottomAnchor.constraint(equalTo: cv.bottomAnchor, constant: -20),
 
             contBtn.topAnchor.constraint(equalTo: stepBox.bottomAnchor, constant: 14),
             contBtn.centerXAnchor.constraint(equalTo: cv.centerXAnchor),
@@ -192,6 +206,7 @@ class PermissionOnboardingController: NSWindowController {
         statusLabel?.stringValue = L("Screen Recording not yet granted")
         statusLabel?.textColor = .secondaryLabelColor
         actionButton?.isHidden = false
+        relaunchButton?.isHidden = false
         continueButton?.isHidden = true
 
         window?.center()
@@ -240,6 +255,7 @@ class PermissionOnboardingController: NSWindowController {
         statusLabel?.stringValue = L("Screen Recording granted!")
         statusLabel?.textColor = .systemGreen
         actionButton?.isHidden = true
+        relaunchButton?.isHidden = true
         continueButton?.isHidden = false
         continueButton?.keyEquivalent = "\r"
 
@@ -260,7 +276,21 @@ class PermissionOnboardingController: NSWindowController {
             NSWorkspace.shared.open(url)
         }
 
-        statusLabel?.stringValue = L("Enable macshot, then try taking a screenshot")
+        statusLabel?.stringValue = L("Enable \"macshot\" in the list, then return here")
+    }
+
+    @objc private func relaunchApp() {
+        // After granting Screen Recording permission, some macOS versions require
+        // the process to restart before CGPreflightScreenCaptureAccess() returns true.
+        guard let appURL = Bundle.main.bundleURL.absoluteURL as URL? else {
+            NSApp.terminate(nil)
+            return
+        }
+        let task = Process()
+        task.executableURL = URL(fileURLWithPath: "/usr/bin/open")
+        task.arguments = [appURL.path]
+        try? task.run()
+        NSApp.terminate(nil)
     }
 
     @objc private func continueClicked() {
