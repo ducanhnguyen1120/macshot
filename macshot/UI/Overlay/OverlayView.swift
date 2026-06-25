@@ -4944,6 +4944,8 @@ class OverlayView: NSView {
             cachedCompositedImage = nil
             selectionStart = pendingReselectStart
             selectionRect = NSRect(origin: pendingReselectStart, size: .zero)
+            showToolbars = false
+            currentTool = .pencil
             state = .selecting
             needsDisplay = true
             return

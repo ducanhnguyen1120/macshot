@@ -53,17 +53,7 @@ extension OverlayView {
     }
 
     func drawWindowSnapHighlight() {
-        guard state == .idle, windowSnapEnabled, let rect = hoveredWindowRect, !rect.isEmpty else {
-            return
-        }
-
-        NSColor.systemBlue.withAlphaComponent(0.08).setFill()
-        NSBezierPath(roundedRect: rect, xRadius: 4, yRadius: 4).fill()
-
-        let border = NSBezierPath(
-            roundedRect: rect.insetBy(dx: 0.5, dy: 0.5), xRadius: 4, yRadius: 4)
-        border.lineWidth = 2
-        NSColor.systemBlue.withAlphaComponent(0.85).setStroke()
-        border.stroke()
+        // Visual highlight removed per user preference — snap detection still works,
+        // clicking a window still snaps to it, just no preview border drawn.
     }
 }
