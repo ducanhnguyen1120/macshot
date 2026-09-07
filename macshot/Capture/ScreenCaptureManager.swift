@@ -540,6 +540,12 @@ class ScreenCaptureManager {
             config.height = Int(scWindow.frame.height) * scale
             config.showsCursor = false
             config.captureResolution = .best
+            // desktopIndependentWindow includes the window's drop shadow in the
+            // captured content. With width/height pinned to the shadowless frame
+            // size, the window gets scaled down to fit — leaving it shrunken with
+            // a transparent shadow margin. Drop the shadow so the window fills the
+            // frame (Beautify adds its own shadow anyway).
+            config.ignoreShadowsSingleWindow = true
 
             guard
                 let image = try? await SCScreenshotManager.captureImage(

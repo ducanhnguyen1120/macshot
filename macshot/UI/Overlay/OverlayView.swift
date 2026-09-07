@@ -6638,6 +6638,34 @@ class OverlayView: NSView {
         return true
     }
 
+    /// Apply a click-to-snap selection to `snapRect`.
+    ///
+    /// A window that spans the whole screen is fullscreen / borderless and has
+    /// no native title-bar chrome, so the window-snap Beautify path (which
+    /// expects real chrome baked into the capture) would render a chrome-less,
+    /// shrunken result with no way to switch to synthetic chrome. In that case
+    /// treat it as a plain full-screen selection instead — Beautify's normal
+    /// Window/Rounded toggle stays available.
+    private func applyWindowSnapSelection(_ snapRect: NSRect) {
+        selectionRect = snapRect
+        let fillsScreen = snapRect.width >= bounds.width - 2 && snapRect.height >= bounds.height - 2
+        guard !fillsScreen else { return }
+
+        selectionIsWindowSnap = true
+        snappedWindowID = hoveredWindowID
+        // Capture the window independently for beautify (transparent corners)
+        if let wid = hoveredWindowID, let screen = window?.screen {
+            Task {
+                if let cgImage = await ScreenCaptureManager.captureWindow(windowID: wid, screen: screen) {
+                    self.snappedWindowImage = NSImage(cgImage: cgImage,
+                        size: NSSize(width: CGFloat(cgImage.width) / screen.backingScaleFactor,
+                                     height: CGFloat(cgImage.height) / screen.backingScaleFactor))
+                    self.needsDisplay = true
+                }
+            }
+        }
+    }
+
     private func finishSelection() {
         if selectionRect.width > 5 || selectionRect.height > 5 {
             // Real drag — use drawn rect as-is
@@ -6647,20 +6675,7 @@ class OverlayView: NSView {
             overlayDelegate?.overlayViewDidFinishSelection(selectionRect)
         } else if windowSnapEnabled, let snapRect = hoveredWindowRect, !snapRect.isEmpty {
             // Click (no drag) with snap on — snap to hovered window
-            selectionRect = snapRect
-            selectionIsWindowSnap = true
-            snappedWindowID = hoveredWindowID
-            // Capture the window independently for beautify (transparent corners)
-            if let wid = hoveredWindowID, let screen = window?.screen {
-                Task {
-                    if let cgImage = await ScreenCaptureManager.captureWindow(windowID: wid, screen: screen) {
-                        self.snappedWindowImage = NSImage(cgImage: cgImage,
-                            size: NSSize(width: CGFloat(cgImage.width) / screen.backingScaleFactor,
-                                         height: CGFloat(cgImage.height) / screen.backingScaleFactor))
-                        self.needsDisplay = true
-                    }
-                }
-            }
+            applyWindowSnapSelection(snapRect)
             state = .selected
             if !autoOCRMode && !autoQuickSaveMode && !autoScrollCaptureMode && !autoConfirmMode { showToolbars = true }
             overlayDelegate?.overlayViewDidFinishSelection(selectionRect)
@@ -6834,21 +6849,7 @@ class OverlayView: NSView {
             }
             overlayDelegate?.overlayViewDidFinishSelection(selectionRect)
         } else if windowSnapEnabled, let snapRect = hoveredWindowRect, !snapRect.isEmpty {
-            selectionRect = snapRect
-            selectionIsWindowSnap = true
-            snappedWindowID = hoveredWindowID
-            if let wid = hoveredWindowID, let screen = window?.screen {
-                Task {
-                    if let cgImage = await ScreenCaptureManager.captureWindow(windowID: wid, screen: screen) {
-                        self.snappedWindowImage = NSImage(
-                            cgImage: cgImage,
-                            size: NSSize(
-                                width: CGFloat(cgImage.width) / screen.backingScaleFactor,
-                                height: CGFloat(cgImage.height) / screen.backingScaleFactor))
-                        self.needsDisplay = true
-                    }
-                }
-            }
+            applyWindowSnapSelection(snapRect)
             state = .selected
             if !autoOCRMode && !autoQuickSaveMode && !autoScrollCaptureMode && !autoConfirmMode {
                 showToolbars = true

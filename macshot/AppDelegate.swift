@@ -273,6 +273,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate {
         // applicationWillTerminate also fires — giving us two diagnostic
         // traces to distinguish Jetsam kills from normal termination.
         setupSignalHandlers()
+        let v = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "?"
+        let b = Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "?"
+        Self.appendTerminationLog("launched \(v) (build \(b))")
 
         // Offer to move to /Applications if running from a DMG or translocated path
         promptToMoveToApplicationsIfNeeded()
@@ -599,6 +602,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate {
 
     func applicationWillTerminate(_ aNotification: Notification) {
         os_log(.fault, log: timingLog, "macshot terminating — thermalState=%d", ProcessInfo.processInfo.thermalState.rawValue)
+        Self.appendTerminationLog("terminated cleanly (thermalState=\(ProcessInfo.processInfo.thermalState.rawValue))")
         for (_, controller) in overlayControllerPool {
             controller.tearDown()
         }
@@ -623,6 +627,21 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate {
         let logPath = logDir.appendingPathComponent("termination.log")
         macshotSignalLogFd = open(logPath.path, O_WRONLY | O_CREAT | O_APPEND, 0o644)
         signal(SIGTERM, sigtermHandler)
+    }
+
+    /// Append a one-line breadcrumb to `~/Library/Logs/macshot/termination.log`.
+    /// A `launched` line with no matching `terminated` line before the next
+    /// `launched` means the process was hard-killed (Jetsam SIGKILL / power
+    /// loss) rather than quit cleanly — the SIGTERM handler leaves its own note.
+    static func appendTerminationLog(_ line: String) {
+        let logPath = FileManager.default.urls(for: .libraryDirectory, in: .userDomainMask).first!
+            .appendingPathComponent("Logs/macshot/termination.log")
+        let stamp = ISO8601DateFormatter().string(from: Date())
+        guard let data = "[\(stamp)] \(line)\n".data(using: .utf8),
+              let fh = try? FileHandle(forWritingTo: logPath) else { return }
+        defer { try? fh.close() }
+        _ = try? fh.seekToEnd()
+        try? fh.write(contentsOf: data)
     }
 
     func applicationSupportsSecureRestorableState(_ app: NSApplication) -> Bool {
