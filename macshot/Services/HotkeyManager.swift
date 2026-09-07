@@ -239,16 +239,19 @@ class HotkeyManager {
         return modifierString(from: modifiers) + keyString(from: keyCode)
     }
 
-    /// Returns true if the keyCode is a function key (F1–F20), safe to use without modifiers.
+    /// Returns true if the keyCode can be used as a standalone hotkey without modifiers.
+    /// Includes F1–F20 and JIS-specific keys (英数, かな) which have no useful default action.
     static func isFunctionKey(_ keyCode: UInt32) -> Bool {
-        let functionKeyCodes: Set<UInt32> = [
+        let standaloneKeyCodes: Set<UInt32> = [
             UInt32(kVK_F1), UInt32(kVK_F2), UInt32(kVK_F3), UInt32(kVK_F4),
             UInt32(kVK_F5), UInt32(kVK_F6), UInt32(kVK_F7), UInt32(kVK_F8),
             UInt32(kVK_F9), UInt32(kVK_F10), UInt32(kVK_F11), UInt32(kVK_F12),
             UInt32(kVK_F13), UInt32(kVK_F14), UInt32(kVK_F15), UInt32(kVK_F16),
             UInt32(kVK_F17), UInt32(kVK_F18), UInt32(kVK_F19), UInt32(kVK_F20),
+            102, // kVK_JIS_Eisu (英数)
+            104, // kVK_JIS_Kana (かな)
         ]
-        return functionKeyCodes.contains(keyCode)
+        return standaloneKeyCodes.contains(keyCode)
     }
 
     // MARK: - String Helpers
@@ -265,6 +268,8 @@ class HotkeyManager {
     static func keyString(from keyCode: UInt32) -> String {
         // Non-character keys have fixed, layout-independent names.
         let specialKeyMap: [UInt32: String] = [
+            102: "英数",
+            104: "かな",
             UInt32(kVK_F1): "F1", UInt32(kVK_F2): "F2", UInt32(kVK_F3): "F3",
             UInt32(kVK_F4): "F4", UInt32(kVK_F5): "F5", UInt32(kVK_F6): "F6",
             UInt32(kVK_F7): "F7", UInt32(kVK_F8): "F8", UInt32(kVK_F9): "F9",
