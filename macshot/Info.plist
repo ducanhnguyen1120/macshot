@@ -43,12 +43,16 @@
 			</array>
 		</dict>
 	</array>
+	<key>CFBundleDisplayName</key>
+	<string>DAN.RIDE</string>
+	<key>CFBundleName</key>
+	<string>DAN.RIDE</string>
 	<key>Privacy - Screen Capture Usage Description</key>
-	<string>macshot needs screen recording permission to capture screenshots.</string>
+	<string>DAN.RIDE needs screen recording permission to capture screenshots.</string>
 	<key>NSMicrophoneUsageDescription</key>
-	<string>macshot can record microphone audio during screen recordings.</string>
+	<string>DAN.RIDE can record microphone audio during screen recordings.</string>
 	<key>NSCameraUsageDescription</key>
-	<string>macshot can show a webcam overlay during screen recordings.</string>
+	<string>DAN.RIDE can show a webcam overlay during screen recordings.</string>
 	<key>SUFeedURL</key>
 	<string>https://raw.githubusercontent.com/sw33tLie/macshot/main/appcast.xml</string>
 	<key>SUPublicEDKey</key>

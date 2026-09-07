@@ -16,12 +16,15 @@ class PermissionOnboardingController: NSWindowController {
 
     private var pollTimer: Timer?
     private var permissionGranted = false
+    // After the user clicks the settings button, switch to CGRequestScreenCaptureAccess()
+    // for polling. Unsigned apps may never appear in TCC unless this is called at least once.
+    private var hasRequestedPermission = false
 
     // MARK: - Init
 
     init() {
         let window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 400, height: 520),
+            contentRect: NSRect(x: 0, y: 0, width: 400, height: 570),
             styleMask: [.titled, .closable],
             backing: .buffered,
             defer: false
@@ -48,6 +51,7 @@ class PermissionOnboardingController: NSWindowController {
     private weak var statusLabel: NSTextField?
     private weak var actionButton: NSButton?
     private weak var continueButton: NSButton?
+    private weak var relaunchButton: NSButton?
     private weak var spinner: NSProgressIndicator?
     private weak var checkmark: NSTextField?
 
@@ -136,6 +140,16 @@ class PermissionOnboardingController: NSWindowController {
         cv.addSubview(contBtn)
         self.continueButton = contBtn
 
+        // Relaunch button — shown when user granted but app is still stuck
+        let relaunchBtn = NSButton(title: L("Still stuck? Quit & Relaunch"), target: self, action: #selector(relaunchApp))
+        relaunchBtn.bezelStyle = .inline
+        relaunchBtn.isBordered = false
+        relaunchBtn.font = NSFont.systemFont(ofSize: 11)
+        relaunchBtn.contentTintColor = .secondaryLabelColor
+        relaunchBtn.translatesAutoresizingMaskIntoConstraints = false
+        cv.addSubview(relaunchBtn)
+        self.relaunchButton = relaunchBtn
+
         // Image aspect ratio: 1405 × 892
         let imgAspect: CGFloat = 892.0 / 1405.0
 
@@ -174,7 +188,10 @@ class PermissionOnboardingController: NSWindowController {
             openBtn.topAnchor.constraint(equalTo: stepBox.bottomAnchor, constant: 14),
             openBtn.centerXAnchor.constraint(equalTo: cv.centerXAnchor),
             openBtn.widthAnchor.constraint(equalToConstant: 260),
-            openBtn.bottomAnchor.constraint(equalTo: cv.bottomAnchor, constant: -20),
+
+            relaunchBtn.topAnchor.constraint(equalTo: openBtn.bottomAnchor, constant: 10),
+            relaunchBtn.centerXAnchor.constraint(equalTo: cv.centerXAnchor),
+            relaunchBtn.bottomAnchor.constraint(equalTo: cv.bottomAnchor, constant: -20),
 
             contBtn.topAnchor.constraint(equalTo: stepBox.bottomAnchor, constant: 14),
             contBtn.centerXAnchor.constraint(equalTo: cv.centerXAnchor),
@@ -186,10 +203,8 @@ class PermissionOnboardingController: NSWindowController {
     // MARK: - Show
 
     func show() {
-        // Reset granted state each time we show — handles the revoke-then-reshown case.
-        // CGPreflightScreenCaptureAccess() caches true within a process lifetime, so
-        // we cannot rely on it after revocation. We reset here so polling starts fresh.
         permissionGranted = false
+        hasRequestedPermission = false
 
         // Reset UI back to initial state in case this controller is being reused
         spinner?.isHidden = false
@@ -198,6 +213,7 @@ class PermissionOnboardingController: NSWindowController {
         statusLabel?.stringValue = L("Screen Recording not yet granted")
         statusLabel?.textColor = .secondaryLabelColor
         actionButton?.isHidden = false
+        relaunchButton?.isHidden = false
         continueButton?.isHidden = true
 
         window?.center()
@@ -210,8 +226,6 @@ class PermissionOnboardingController: NSWindowController {
 
     private func startPolling() {
         pollTimer?.invalidate()
-        // Poll every 0.75s using CGPreflightScreenCaptureAccess() — this is a pure
-        // TCC status query that never triggers the native system dialog.
         pollTimer = Timer.scheduledTimer(withTimeInterval: 0.75, repeats: true) { [weak self] _ in
             self?.checkPermission()
         }
@@ -219,7 +233,13 @@ class PermissionOnboardingController: NSWindowController {
 
     private func checkPermission() {
         guard !permissionGranted else { return }
-        if CGPreflightScreenCaptureAccess() {
+        // Before the user clicks the button: use preflight (no dialog).
+        // After: use CGRequestScreenCaptureAccess() — unsigned apps need this to be called
+        // at least once for TCC to properly register and return a meaningful result.
+        let granted = hasRequestedPermission
+            ? CGRequestScreenCaptureAccess()
+            : CGPreflightScreenCaptureAccess()
+        if granted {
             permissionGranted = true
             pollTimer?.invalidate()
             pollTimer = nil
@@ -227,14 +247,16 @@ class PermissionOnboardingController: NSWindowController {
         }
     }
 
-    /// Check screen recording permission without triggering a system dialog.
-    /// Uses CGPreflightScreenCaptureAccess() which is purely a status query.
-    /// NOTE: This may return a stale cached value if permission was revoked since launch.
+    /// Check screen recording permission at launch.
+    /// Uses preflight first (no dialog). If that returns false — which happens for unsigned
+    /// apps that haven't been registered with TCC — falls back to CGRequestScreenCaptureAccess()
+    /// which is authoritative and returns true immediately when permission is already granted.
     static func hasScreenRecordingPermission() -> Bool {
-        return CGPreflightScreenCaptureAccess()
+        if CGPreflightScreenCaptureAccess() { return true }
+        return CGRequestScreenCaptureAccess()
     }
 
-    /// Check at app launch — synchronous and dialog-free.
+    /// Check at app launch — synchronous.
     static func checkPermissionSync(completion: @escaping (Bool) -> Void) {
         completion(hasScreenRecordingPermission())
     }
@@ -246,6 +268,7 @@ class PermissionOnboardingController: NSWindowController {
         statusLabel?.stringValue = L("Screen Recording granted!")
         statusLabel?.textColor = .systemGreen
         actionButton?.isHidden = true
+        relaunchButton?.isHidden = true
         continueButton?.isHidden = false
         continueButton?.keyEquivalent = "\r"
 
@@ -258,15 +281,39 @@ class PermissionOnboardingController: NSWindowController {
     // MARK: - Actions
 
     @objc private func openSettings() {
-        // Deep-link directly to Privacy & Security → Screen Recording.
-        // macOS will add macshot to the list automatically when it first
-        // attempts a capture — no CGRequestScreenCaptureAccess() call needed
-        // (that API shows the redundant native dialog we want to avoid).
+        hasRequestedPermission = true
+
+        // CGRequestScreenCaptureAccess() registers the app with TCC (essential for unsigned
+        // apps) and returns the current permission state without opening a dialog if the
+        // user already granted in System Settings.
+        if CGRequestScreenCaptureAccess() {
+            if !permissionGranted {
+                permissionGranted = true
+                pollTimer?.invalidate()
+                pollTimer = nil
+                showGranted()
+            }
+            return
+        }
+
         if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture") {
             NSWorkspace.shared.open(url)
         }
+        statusLabel?.stringValue = L("Enable \"macshot\" in the list, then return here")
+    }
 
-        statusLabel?.stringValue = L("Enable macshot, then try taking a screenshot")
+    @objc private func relaunchApp() {
+        // After granting Screen Recording permission, some macOS versions require
+        // the process to restart before CGPreflightScreenCaptureAccess() returns true.
+        guard let appURL = Bundle.main.bundleURL.absoluteURL as URL? else {
+            NSApp.terminate(nil)
+            return
+        }
+        let task = Process()
+        task.executableURL = URL(fileURLWithPath: "/usr/bin/open")
+        task.arguments = [appURL.path]
+        try? task.run()
+        NSApp.terminate(nil)
     }
 
     @objc private func continueClicked() {

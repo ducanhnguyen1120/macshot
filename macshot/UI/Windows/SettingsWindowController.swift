@@ -58,7 +58,7 @@ class SettingsWindowController: NSWindowController, NSToolbarDelegate, NSWindowD
     private var saveActionPopup: NSPopUpButton!
     private var ocrActionPopup: NSPopUpButton!
     private var copySoundCheckbox: NSButton!
-    // rememberSelectionCheckbox removed — selection is always saved for "Capture Last Area"
+    private var rememberLastSelectionCheckbox: NSButton!
     private var rememberToolCheckbox: NSButton!
     private var thumbnailCheckbox: NSButton!
     private var thumbnailAutoDismissStepper: NSStepper!
@@ -768,6 +768,7 @@ class SettingsWindowController: NSWindowController, NSToolbarDelegate, NSWindowD
 
         // Checkboxes
         copySoundCheckbox = NSButton(checkboxWithTitle: L("Play sound on capture"), target: self, action: #selector(copySoundChanged(_:)))
+        rememberLastSelectionCheckbox = NSButton(checkboxWithTitle: L("Remember last capture area"), target: self, action: #selector(rememberLastSelectionChanged(_:)))
         rememberToolCheckbox = NSButton(checkboxWithTitle: L("Remember last selected tool"), target: self, action: #selector(rememberToolChanged(_:)))
         thumbnailCheckbox = NSButton(checkboxWithTitle: L("Show floating thumbnail after capture"), target: self, action: #selector(thumbnailChanged(_:)))
         snapGuidesCheckbox = NSButton(checkboxWithTitle: L("Show snap alignment guides"), target: self, action: #selector(snapGuidesChanged(_:)))
@@ -790,7 +791,7 @@ class SettingsWindowController: NSWindowController, NSToolbarDelegate, NSWindowD
         filenameTemplatePreview.textColor = .secondaryLabelColor
         filenameTemplatePreview.lineBreakMode = .byTruncatingMiddle
 
-        for cb in [copySoundCheckbox!, rememberToolCheckbox!, thumbnailCheckbox!] {
+        for cb in [copySoundCheckbox!, rememberLastSelectionCheckbox!, rememberToolCheckbox!, thumbnailCheckbox!] {
             stack.addArrangedSubview(indented(cb))
             stack.setCustomSpacing(6, after: stack.arrangedSubviews.last!)
         }
@@ -2531,7 +2532,8 @@ class SettingsWindowController: NSWindowController, NSToolbarDelegate, NSWindowD
         let copySound = UserDefaults.standard.object(forKey: "playCopySound") as? Bool ?? true
         copySoundCheckbox.state = copySound ? .on : .off
 
-        // rememberSelectionCheckbox removed
+        let rememberLastSel = UserDefaults.standard.bool(forKey: "rememberLastSelection")
+        rememberLastSelectionCheckbox.state = rememberLastSel ? .on : .off
 
         let rememberTool = UserDefaults.standard.object(forKey: "rememberLastTool") as? Bool ?? true
         rememberToolCheckbox.state = rememberTool ? .on : .off
@@ -2717,6 +2719,9 @@ class SettingsWindowController: NSWindowController, NSToolbarDelegate, NSWindowD
     }
     @objc private func copySoundChanged(_ sender: NSButton) {
         UserDefaults.standard.set(sender.state == .on, forKey: "playCopySound")
+    }
+    @objc private func rememberLastSelectionChanged(_ sender: NSButton) {
+        UserDefaults.standard.set(sender.state == .on, forKey: "rememberLastSelection")
     }
     @objc private func rememberToolChanged(_ sender: NSButton) {
         let enabled = sender.state == .on
