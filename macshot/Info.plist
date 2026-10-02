@@ -56,13 +56,13 @@
 	<key>NSSpeechRecognitionUsageDescription</key>
 	<string>DAN.RIDE transcribes your recordings on this Mac to create captions. Audio is not uploaded.</string>
 	<key>SUFeedURL</key>
-	<string>https://raw.githubusercontent.com/sw33tLie/macshot/main/appcast.xml</string>
+	<string>https://github.com/ducanhnguyen1120/macshot/releases/latest/download/appcast.xml</string>
 	<key>SUPublicEDKey</key>
-	<string>+5RTT9lGyoeOYAYuNfCdPhxugmruYvRDyFXgk6VPY1c=</string>
+	<string>j/app86Cqqql5aoGlU/DH7RyJfNyirhdY8qQXcFqYII=</string>
 	<key>SUScheduledCheckInterval</key>
 	<integer>86400</integer>
 	<key>SUEnableAutomaticChecks</key>
-	<false/>
+	<true/>
 	<key>SUEnableInstallerLauncherService</key>
 	<true/>
 	<key>NSSupportsAutomaticTermination</key>

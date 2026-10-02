@@ -1,0 +1,131 @@
+name: Release DAN.RIDE
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+  UPSTREAM_REPO: https://github.com/sw33tLie/macshot.git
+
+permissions:
+  contents: write
+  issues: write
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: macos-26
+    timeout-minutes: 45
+    env:
+      GH_TOKEN: ${{ github.token }}
+      SIGNING_CERT_P12_BASE64: ${{ secrets.SIGNING_CERT_P12_BASE64 }}
+      SIGNING_CERT_PASSWORD: ${{ secrets.SIGNING_CERT_PASSWORD }}
+      SPARKLE_ED_SEED: ${{ secrets.SPARKLE_ED_SEED }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Sync with upstream
+        run: |
+          git config user.name "dan-ride-ci"
+          git config user.email "dan-ride-ci@users.noreply.github.com"
+          git remote add upstream "$UPSTREAM_REPO" 2>/dev/null || true
+          git fetch --quiet upstream '+refs/tags/*:refs/tags/upstream/*' 'main:refs/remotes/upstream/main'
+          LATEST=$(git -c versionsort.suffix=-beta tag -l 'upstream/v*' --sort=-v:refname | head -1 | sed 's#^upstream/##')
+          echo "Latest upstream tag: $LATEST"
+
+          if git rev-parse -q --verify refs/tags/fork-base >/dev/null; then
+            if git rebase --onto "upstream/$LATEST" fork-base HEAD; then
+              echo "Rebased fork patches onto $LATEST"
+            else
+              git rebase --abort || true
+              echo "::error::Rebase onto $LATEST conflicts. Resolve locally (rebase main onto $LATEST, move the fork-base tag) and push."
+              exit 1
+            fi
+          else
+            echo "No fork-base tag; building main as-is."
+            LATEST=$(git describe --tags --abbrev=0 2>/dev/null || echo "v0.0.0")
+          fi
+          echo "UPSTREAM_TAG=$LATEST" >> "$GITHUB_ENV"
+          echo "VERSION=${LATEST#v}" >> "$GITHUB_ENV"
+          BUILD_NUMBER=$(date -u +%Y%m%d%H%M)
+          echo "BUILD_NUMBER=$BUILD_NUMBER" >> "$GITHUB_ENV"
+
+      - name: Select Xcode
+        run: |
+          XC=$(ls -d /Applications/Xcode_26*.app 2>/dev/null | sort -V | tail -1)
+          if [ -z "$XC" ]; then XC=$(ls -d /Applications/Xcode*.app | sort -V | tail -1); fi
+          sudo xcode-select -s "$XC/Contents/Developer"
+          xcodebuild -version
+
+      - name: Resolve packages
+        run: |
+          xcodebuild -project macshot.xcodeproj -scheme macshot -configuration Release \
+            -derivedDataPath build CODE_SIGN_IDENTITY="-" CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGNING_ALLOWED=YES -resolvePackageDependencies
+
+      - name: Build
+        run: |
+          xcodebuild -project macshot.xcodeproj -scheme macshot -configuration Release \
+            -derivedDataPath build CODE_SIGN_IDENTITY="-" CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGNING_ALLOWED=YES MARKETING_VERSION="$VERSION" \
+            CURRENT_PROJECT_VERSION="$BUILD_NUMBER" build
+
+      - name: Sign app
+        run: |
+          APP="build/Build/Products/Release/macshot.app"
+          IDENTITY="-"
+          if [ -n "$SIGNING_CERT_P12_BASE64" ]; then
+            # Stable self-signed identity: the designated requirement stays the
+            # same across builds, so macOS keeps Screen Recording / Accessibility
+            # grants after an update.
+            KC="$RUNNER_TEMP/dan-ride.keychain-db"
+            echo "$SIGNING_CERT_P12_BASE64" | base64 --decode > "$RUNNER_TEMP/cert.p12"
+            security create-keychain -p ci "$KC"
+            security set-keychain-settings -lut 21600 "$KC"
+            security unlock-keychain -p ci "$KC"
+            security import "$RUNNER_TEMP/cert.p12" -k "$KC" -P "$SIGNING_CERT_PASSWORD" -A >/dev/null
+            security list-keychains -d user -s "$KC" $(security list-keychains -d user | tr -d '"')
+            rm -f "$RUNNER_TEMP/cert.p12"
+            IDENTITY="DAN.RIDE Self-Signed"
+          else
+            echo "::warning::No signing certificate secret - falling back to ad-hoc (permissions reset on every update)"
+          fi
+          find "$APP/Contents/Frameworks" -name "*.framework" -o -name "*.dylib" 2>/dev/null | while read f; do
+            codesign --force --sign "$IDENTITY" "$f" 2>/dev/null || true
+          done
+          codesign --force --deep --sign "$IDENTITY" "$APP"
+          codesign -dr - "$APP"
+
+      - name: Create DMG
+        run: |
+          APP="build/Build/Products/Release/macshot.app"
+          mkdir -p /tmp/dmg-staging
+          cp -R "$APP" /tmp/dmg-staging/
+          hdiutil create -volname "DAN.RIDE" -srcfolder /tmp/dmg-staging -ov -format UDZO DAN.RIDE.dmg
+
+      - name: Upload DMG artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: DAN.RIDE-dmg
+          path: DAN.RIDE.dmg
+          retention-days: 30
+
+      - name: Publish release and appcast
+        if: env.SPARKLE_ED_SEED != ''
+        run: |
+          python3 -m pip install --quiet --break-system-packages cryptography || python3 -m pip install --quiet cryptography
+          export TAG="dan-${UPSTREAM_TAG}-b${BUILD_NUMBER}"
+          python3 .github/make_appcast.py
+          gh release create "$TAG" DAN.RIDE.dmg appcast.xml \
+            --target "${GITHUB_SHA}" --latest \
+            --title "DAN.RIDE ${VERSION}" \
+            --notes "Upstream macshot ${UPSTREAM_TAG} + DAN.RIDE patches."
