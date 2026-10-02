@@ -3,6 +3,9 @@ name: Release DAN.RIDE
 on:
   push:
     branches: [ main ]
+    paths-ignore:
+      - '**.md'
+      - 'docs/**'
   workflow_dispatch:
 
 env:
