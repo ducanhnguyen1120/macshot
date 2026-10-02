@@ -125,7 +125,7 @@ jobs:
           python3 -m pip install --quiet --break-system-packages cryptography || python3 -m pip install --quiet cryptography
           export TAG="dan-${UPSTREAM_TAG}-b${BUILD_NUMBER}"
           python3 .github/make_appcast.py
-          gh release create "$TAG" DAN.RIDE.dmg appcast.xml \
+          gh release create "$TAG" DAN.RIDE.dmg appcast.xml -R "$GITHUB_REPOSITORY" \
             --target "${GITHUB_SHA}" --latest \
             --title "DAN.RIDE ${VERSION}" \
             --notes "Upstream macshot ${UPSTREAM_TAG} + DAN.RIDE patches."
