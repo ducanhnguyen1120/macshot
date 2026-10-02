@@ -855,3 +855,7 @@
 "Zoom out timeline" = "Oddialiť časovú os";
 "macOS" = "macOS";
 "Sway" = "Kývanie";
+
+"Enable \"macshot\" in the list, then return here" = "Enable \"macshot\" in the list, then return here";
+"Remember last capture area" = "Remember last capture area";
+"Still stuck? Quit & Relaunch" = "Still stuck? Quit & Relaunch";

@@ -855,3 +855,7 @@
 "Zoom out timeline" = "Thu nhỏ dòng thời gian";
 "macOS" = "macOS";
 "Sway" = "Lắc lư";
+
+"Enable \"macshot\" in the list, then return here" = "Bật \"macshot\" trong danh sách, rồi quay lại đây";
+"Remember last capture area" = "Nhớ vùng chụp lần trước";
+"Still stuck? Quit & Relaunch" = "Vẫn bị kẹt? Thoát và mở lại";
