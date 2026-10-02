@@ -624,7 +624,10 @@ class ScreenCaptureManager {
                     contentFilter: filter, configuration: config
                 )
             else { return captureViaWindowList() }
-            return trimmingTransparentMargins(image)
+            let trimmed = trimmingTransparentMargins(image)
+            AppDelegate.appendTerminationLog(
+                "snap window=\(windowID) frame=\(scWindow.frame) contentRect=\(filter.contentRect) pps=\(filter.pointPixelScale) screenScale=\(screen.backingScaleFactor) config=\(config.width)x\(config.height) image=\(image.width)x\(image.height) trimmed=\(trimmed.width)x\(trimmed.height)")
+            return trimmed
         } else {
             // macOS 12.3–13.x: CGWindowListCreateImage targeting the specific window
             return captureViaWindowList()

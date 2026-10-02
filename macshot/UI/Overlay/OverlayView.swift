@@ -6794,6 +6794,7 @@ class OverlayView: NSView {
     /// Window/Rounded toggle stays available.
     private func applyWindowSnapSelection(_ snapRect: NSRect) {
         selectionRect = snapRect
+        AppDelegate.appendTerminationLog("snapRect=\(snapRect) bounds=\(bounds) screenshot=\(String(describing: screenshotImage?.size)) windowScale=\(window?.backingScaleFactor ?? 0)")
         let isWindowSnap = snapMode == .window
         let fillsScreen = snapRect.width >= bounds.width - 2 && snapRect.height >= bounds.height - 2
         guard isWindowSnap, !fillsScreen else {
