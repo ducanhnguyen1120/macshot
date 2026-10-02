@@ -1,3 +1,4 @@
+import CoreGraphics
 #if !OFFLINE
 import CryptoKit
 import Foundation
