@@ -6806,14 +6806,49 @@ class OverlayView: NSView {
         selectionIsWindowSnap = true
         snappedWindowID = hoveredSnapWindowID
         if let wid = hoveredSnapWindowID, let screen = window?.screen {
+            let scale = screenshotPixelScale
+            let expected = CGSize(width: snapRect.width * scale, height: snapRect.height * scale)
             Task {
-                if let cgImage = await ScreenCaptureManager.captureWindow(windowID: wid, screen: screen) {
+                let captured = await ScreenCaptureManager.captureWindow(windowID: wid, screen: screen)
+                if let cgImage = captured, Self.windowCaptureMatches(cgImage, expected: expected) {
                     self.snappedWindowImage = NSImage(cgImage: cgImage,
-                        size: NSSize(width: CGFloat(cgImage.width) / screen.backingScaleFactor,
-                                     height: CGFloat(cgImage.height) / screen.backingScaleFactor))
-                    self.needsDisplay = true
+                        size: NSSize(width: CGFloat(cgImage.width) / scale,
+                                     height: CGFloat(cgImage.height) / scale))
+                } else if let crop = self.captureSelectedRegionRaw() {
+                    // The independent window capture did not match the window on
+                    // screen (mixed-density displays, windows with invisible
+                    // margins): using it would resample the window into the
+                    // selection. Use the native-resolution screen pixels instead,
+                    // with rounded corners.
+                    self.snappedWindowImage = Self.roundedCorners(crop, radius: 10)
                 }
+                self.needsDisplay = true
             }
+        }
+    }
+
+    private var screenshotPixelScale: CGFloat {
+        if let screenshot = captureSourceImage ?? screenshotImage,
+           let cg = screenshot.cgImage(forProposedRect: nil, context: nil, hints: nil),
+           screenshot.size.width > 0 {
+            return CGFloat(cg.width) / screenshot.size.width
+        }
+        return window?.backingScaleFactor ?? 2
+    }
+
+    private static func windowCaptureMatches(_ image: CGImage, expected: CGSize) -> Bool {
+        guard expected.width > 0, expected.height > 0 else { return false }
+        let dw = abs(CGFloat(image.width) - expected.width) / expected.width
+        let dh = abs(CGFloat(image.height) - expected.height) / expected.height
+        return dw <= 0.03 && dh <= 0.03
+    }
+
+    private static func roundedCorners(_ image: NSImage, radius: CGFloat) -> NSImage {
+        let size = image.size
+        return NSImage(size: size, flipped: false) { rect in
+            NSBezierPath(roundedRect: rect, xRadius: radius, yRadius: radius).addClip()
+            image.draw(in: rect, from: .zero, operation: .copy, fraction: 1.0)
+            return true
         }
     }
 
