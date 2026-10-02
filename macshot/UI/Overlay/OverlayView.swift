@@ -835,9 +835,19 @@ class OverlayView: NSView {
                 tap: .cgSessionEventTap,
                 place: .headInsertEventTap,
                 options: .defaultTap,
-                eventsOfInterest: CGEventMask(1 << CGEventType.mouseMoved.rawValue),
-                callback: { _, _, _, _ in nil },
-                userInfo: nil)
+                eventsOfInterest: CGEventMask(1 << CGEventType.mouseMoved.rawValue)
+                    | CGEventMask(1 << CGEventType.keyDown.rawValue),
+                callback: { _, type, event, userInfo in
+                    guard type == .keyDown else { return nil }
+                    let code = event.getIntegerValueField(.keyboardEventKeycode)
+                    guard code == 36 || code == 76 else { return Unmanaged.passUnretained(event) }
+                    if event.getIntegerValueField(.keyboardEventAutorepeat) == 0, let userInfo {
+                        let view = Unmanaged<OverlayView>.fromOpaque(userInfo).takeUnretainedValue()
+                        DispatchQueue.main.async { view.finishScrollCaptureFromKeyboard() }
+                    }
+                    return nil
+                },
+                userInfo: Unmanaged.passUnretained(self).toOpaque())
             if let tap = tap {
                 let source = CFMachPortCreateRunLoopSource(nil, tap, 0)
                 CFRunLoopAddSource(CFRunLoopGetMain(), source, .commonModes)
@@ -852,6 +862,8 @@ class OverlayView: NSView {
             guard let self = self, self.isScrollCapturing else { return }
             if event.keyCode == 53 {  // Escape
                 self.overlayDelegate?.overlayViewDidRequestCancelScrollCapture()
+            } else if event.keyCode == 36 || event.keyCode == 76 {  // Return / numpad Enter
+                self.finishScrollCaptureFromKeyboard()
             }
         }
         scrollCaptureKeyMonitor = NSEvent.addGlobalMonitorForEvents(matching: .keyDown) { event in
@@ -859,7 +871,7 @@ class OverlayView: NSView {
         }
         scrollCaptureLocalKeyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
             handleScrollKey(event)
-            if event.keyCode == 53 { return nil }  // consume
+            if event.keyCode == 53 || event.keyCode == 36 || event.keyCode == 76 { return nil }  // consume
             return event
         }
 
@@ -883,6 +895,11 @@ class OverlayView: NSView {
         scrollCaptureHUDPanel = panel
 
         needsDisplay = true
+    }
+
+    func finishScrollCaptureFromKeyboard() {
+        guard isScrollCapturing else { return }
+        overlayDelegate?.overlayViewDidRequestStopScrollCapture()
     }
 
     func stopScrollCaptureMode() {

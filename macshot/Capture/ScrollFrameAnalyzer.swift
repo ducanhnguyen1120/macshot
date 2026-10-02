@@ -13,7 +13,7 @@ import Foundation
 /// stride as `width * 4` is wrong whenever the window server pads rows for
 /// alignment, and the error compounds row by row, so every sample after the
 /// first row lands in the wrong place.
-enum ScrollFrameAnalyzer {
+nonisolated enum ScrollFrameAnalyzer {
 
     /// SAD (sum of absolute differences) above which two samples count as
     /// different content rather than compression or antialiasing noise.

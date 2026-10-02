@@ -38,7 +38,7 @@ class ScrollCaptureHUDView: NSView {
         autoScrollButton.action = #selector(autoScrollClicked)
         addSubview(autoScrollButton)
 
-        stopButton.title = L("Stop")
+        stopButton.title = L("Stop") + " ⏎"
         stopButton.bezelStyle = .recessed
         stopButton.isBordered = false
         stopButton.wantsLayer = true

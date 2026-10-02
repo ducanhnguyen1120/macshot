@@ -36,7 +36,8 @@ enum UploadPayload: Sendable {
         switch self {
         case .image(let image):
             guard let data = ImageEncoder.encodeWithCGImageDestination(cgImage: image.pixels,
-                type: "public.png", lossyQuality: nil) else { throw CocoaError(.fileWriteUnknown) }
+                type: "public.png", lossyQuality: nil,
+                dpi: Double(image.pixels.width) / max(1, image.pointSize.width) * 72) else { throw CocoaError(.fileWriteUnknown) }
             try UploadPayload.data(data).forEachChunk(consume)
         case .data(let data):
             var offset = 0

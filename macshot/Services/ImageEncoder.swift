@@ -125,12 +125,24 @@ enum ImageEncoder {
             return encode(pixels: pixels)
         }
 
+        /// Pixel density that maps the encoded pixels back to the capture's
+        /// point size (144 for a Retina capture). Without it every encoder
+        /// writes 72 dpi, so a 2x image is treated as a huge 1x one and apps
+        /// that downscale on paste or upload (Discord, Sheets, browsers) soften it.
+        nonisolated func dpi(for pixels: CGImage) -> Double {
+            let points = image.pointSize.width
+            guard points.isFinite, points > 0 else { return 72 }
+            let value = Double(pixels.width) / points * 72
+            return value.isFinite ? min(max(value, 72), 576) : 72
+        }
+
         nonisolated func encode(pixels: CGImage) -> Data? {
+            let dpi = dpi(for: pixels)
             switch format {
-            case .png: return ImageEncoder.encodeWithCGImageDestination(cgImage: pixels, type: "public.png", lossyQuality: nil)
-            case .jpeg: return ImageEncoder.encodeWithCGImageDestination(cgImage: pixels, type: "public.jpeg", lossyQuality: quality)
-            case .heic: return ImageEncoder.encodeWithCGImageDestination(cgImage: pixels, type: "public.heic", lossyQuality: quality)
-            case .avif: return ImageEncoder.encodeWithCGImageDestination(cgImage: pixels, type: "public.avif", lossyQuality: quality)
+            case .png: return ImageEncoder.encodeWithCGImageDestination(cgImage: pixels, type: "public.png", lossyQuality: nil, dpi: dpi)
+            case .jpeg: return ImageEncoder.encodeWithCGImageDestination(cgImage: pixels, type: "public.jpeg", lossyQuality: quality, dpi: dpi)
+            case .heic: return ImageEncoder.encodeWithCGImageDestination(cgImage: pixels, type: "public.heic", lossyQuality: quality, dpi: dpi)
+            case .avif: return ImageEncoder.encodeWithCGImageDestination(cgImage: pixels, type: "public.avif", lossyQuality: quality, dpi: dpi)
             case .webp: return ImageEncoder.encodeWebP(cgImage: pixels, quality: quality)
             }
         }
@@ -189,13 +201,17 @@ enum ImageEncoder {
     /// Generic CGImageDestination encoder — embeds the source color profile.
     /// The CGImage already carries its display's ICC profile (e.g. Display P3).
     /// CGImageDestination embeds it automatically — no pixel conversion needed.
-    nonisolated static func encodeWithCGImageDestination(cgImage: CGImage, type: String, lossyQuality: CGFloat?) -> Data? {
+    nonisolated static func encodeWithCGImageDestination(cgImage: CGImage, type: String, lossyQuality: CGFloat?, dpi: Double? = nil) -> Data? {
         let data = NSMutableData()
         guard let dest = CGImageDestinationCreateWithData(data as CFMutableData, type as CFString, 1, nil) else { return nil }
 
         var properties: [String: Any] = [:]
         if let q = lossyQuality {
             properties[kCGImageDestinationLossyCompressionQuality as String] = q
+        }
+        if let dpi {
+            properties[kCGImagePropertyDPIWidth as String] = dpi
+            properties[kCGImagePropertyDPIHeight as String] = dpi
         }
 
         CGImageDestinationAddImage(dest, cgImage, properties as CFDictionary)
@@ -238,7 +254,7 @@ enum ImageEncoder {
     nonisolated static func clipboardRepresentations(for prepared: PreparedImage,
                                                      includeConfiguredFormat: Bool) -> [(type: NSPasteboard.PasteboardType, data: Data)] {
         guard let pixels = try? prepared.pixelsForEncoding(),
-              let pngData = encodeWithCGImageDestination(cgImage: pixels, type: "public.png", lossyQuality: nil) else {
+              let pngData = encodeWithCGImageDestination(cgImage: pixels, type: "public.png", lossyQuality: nil, dpi: prepared.dpi(for: pixels)) else {
             return []
         }
         var representations: [(type: NSPasteboard.PasteboardType, data: Data)] = []
@@ -247,7 +263,7 @@ enum ImageEncoder {
             representations.append((NSPasteboard.PasteboardType(prepared.format.utType.identifier), data))
         }
         representations.append((.png, pngData))
-        if let tiffData = encodeWithCGImageDestination(cgImage: pixels, type: "public.tiff", lossyQuality: nil) {
+        if let tiffData = encodeWithCGImageDestination(cgImage: pixels, type: "public.tiff", lossyQuality: nil, dpi: prepared.dpi(for: pixels)) {
             representations.append((.tiff, tiffData))
         }
         return representations
