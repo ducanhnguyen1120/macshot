@@ -515,6 +515,52 @@ class ScreenCaptureManager {
     /// Captures a single window by its CGWindowID, returning an image with transparent corners.
     /// On macOS 14+, uses `desktopIndependentWindow` filter for clean transparent background.
     /// On macOS 12–13, uses `CGWindowListCreateImage` targeting the specific window.
+    /// ScreenCaptureKit can hand back a canvas larger than the visible window
+    /// (fully transparent rows/columns on the top or right, most visibly for
+    /// maximized windows). Beautify stretches this image into the selection
+    /// rectangle, so any leftover margin shrinks and offsets the window.
+    /// Crop to the pixels that actually contain the window.
+    nonisolated static func trimmingTransparentMargins(_ image: CGImage) -> CGImage {
+        let width = image.width
+        let height = image.height
+        guard width > 2, height > 2 else { return image }
+        let bytesPerRow = width * 4
+        guard let context = CGContext(
+            data: nil, width: width, height: height, bitsPerComponent: 8, bytesPerRow: bytesPerRow,
+            space: CGColorSpace(name: CGColorSpace.sRGB)!,
+            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue),
+            let base = context.data
+        else { return image }
+        context.draw(image, in: CGRect(x: 0, y: 0, width: width, height: height))
+        let pixels = base.assumingMemoryBound(to: UInt8.self)
+        let threshold: UInt8 = 2
+
+        func rowHasContent(_ y: Int) -> Bool {
+            let row = pixels + y * bytesPerRow
+            for x in stride(from: 0, to: width, by: 2) where row[x * 4 + 3] > threshold { return true }
+            return false
+        }
+        func columnHasContent(_ x: Int, _ top: Int, _ bottom: Int) -> Bool {
+            for y in stride(from: top, through: bottom, by: 2) where pixels[y * bytesPerRow + x * 4 + 3] > threshold { return true }
+            return false
+        }
+
+        var top = 0
+        while top < height, !rowHasContent(top) { top += 1 }
+        var bottom = height - 1
+        while bottom > top, !rowHasContent(bottom) { bottom -= 1 }
+        guard top <= bottom else { return image }
+        var left = 0
+        while left < width, !columnHasContent(left, top, bottom) { left += 1 }
+        var right = width - 1
+        while right > left, !columnHasContent(right, top, bottom) { right -= 1 }
+        guard left <= right else { return image }
+
+        if left == 0 && top == 0 && right == width - 1 && bottom == height - 1 { return image }
+        let rect = CGRect(x: left, y: top, width: right - left + 1, height: bottom - top + 1)
+        return image.cropping(to: rect) ?? image
+    }
+
     static func captureWindow(windowID: CGWindowID, screen: NSScreen) async -> CGImage? {
         func captureViaWindowList() -> CGImage? {
             CGWindowListCreateImage(.null, .optionIncludingWindow, windowID, .bestResolution)
@@ -563,7 +609,7 @@ class ScreenCaptureManager {
                     contentFilter: filter, configuration: config
                 )
             else { return captureViaWindowList() }
-            return image
+            return trimmingTransparentMargins(image)
         } else {
             // macOS 12.3–13.x: CGWindowListCreateImage targeting the specific window
             return captureViaWindowList()
