@@ -595,6 +595,21 @@ class ScreenCaptureManager {
             let scale = Int(screen.backingScaleFactor)
             config.width = Int(scWindow.frame.width) * scale
             config.height = Int(scWindow.frame.height) * scale
+            if #available(macOS 14.0, *) {
+                // Size the output from the filter's own content rect and pixel
+                // scale instead of `scWindow.frame`. With scalesToFit (the
+                // default) any mismatch between the two makes ScreenCaptureKit
+                // resample the window into the configured size: soft text and a
+                // squashed aspect ratio. Render at native scale instead; the
+                // transparent slack is trimmed below.
+                let contentRect = filter.contentRect
+                let pixelScale = CGFloat(filter.pointPixelScale)
+                if contentRect.width > 0, contentRect.height > 0, pixelScale > 0 {
+                    config.width = Int(ceil(contentRect.width * pixelScale))
+                    config.height = Int(ceil(contentRect.height * pixelScale))
+                    config.scalesToFit = false
+                }
+            }
             config.showsCursor = false
             config.captureResolution = .best
             // desktopIndependentWindow includes the window's drop shadow in the
