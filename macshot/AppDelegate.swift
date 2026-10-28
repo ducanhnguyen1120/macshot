@@ -2858,7 +2858,7 @@ extension AppDelegate: OverlayWindowControllerDelegate {
             }
 
             if let url = url {
-                let deliverRecording: (URL) -> Void = { [weak self] finalURL in
+                let deliverNow: (URL) -> Void = { [weak self] finalURL in
                     guard let self = self else { return }
                     let onStop = onStopOverride ?? UserDefaults.standard.string(forKey: "recordingOnStop") ?? "editor"
                     switch onStop {
@@ -2870,6 +2870,15 @@ extension AppDelegate: OverlayWindowControllerDelegate {
                         self.copyRecordingToClipboard(url: finalURL)
                     default:
                         VideoEditorWindowController.open(url: finalURL)
+                    }
+                }
+
+                // Put the MP4 index first so chat apps and web players that
+                // start before the file is fully available keep the audio.
+                let deliverRecording: (URL) -> Void = { finalURL in
+                    Task {
+                        await Task.detached(priority: .userInitiated) { MP4FastStart.optimizeInPlace(finalURL) }.value
+                        deliverNow(finalURL)
                     }
                 }
 
