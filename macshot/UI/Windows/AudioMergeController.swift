@@ -106,6 +106,14 @@ final class AudioMergeController: NSObject {
 
         panel.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
+
+        // Facebook, Zalo, Discord and most web players decode only the first
+        // audio track, so a recording with separate mic and system tracks is
+        // silent (or has just one source) when shared, until the service
+        // re-encodes it. Mix into one track unless the user opted out.
+        if UserDefaults.standard.object(forKey: "autoMergeRecordedAudio") as? Bool ?? true {
+            DispatchQueue.main.async { [weak self] in self?.mergeClicked() }
+        }
     }
 
     private var _url: URL!
